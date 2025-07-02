@@ -70,6 +70,7 @@ let resizeMode = false;
 let creatingNewRect = false;
 let startX = 0, startY = 0;
 let selectedIndex = -1;
+let debounceTimer;
 const SNAP_TOLERANCE = 8;
 const RESIZE_HITBOX = 10;
 
@@ -383,17 +384,20 @@ function updateCharEditor() {
     row.innerHTML = `
       #${i}
       x:<input id="x_input_${i}" type="number" value="${r.x}" 
-         oninput="setSelected(${i}); updateVal(${i}, 'x', this.value)" style="width:60px;">
+         oninput="updateVal(${i}, 'x', this.value)" style="width:60px;">
 
       y:<input id="y_input_${i}" type="number" value="${r.y}" 
-         oninput="setSelected(${i}); updateVal(${i}, 'y', this.value)" style="width:60px;">
+         oninput="updateVal(${i}, 'y', this.value)" style="width:60px;">
 
-      寬『橘框』:<input id="w_input_${i}" type="number" value="${r.w}" oninput="setSelected(${i}); updateVal(${i}, 'w', this.value)" style="width:60px;">
+      寬『橘框』:<input id="w_input_${i}" type="number" value="${r.w}" 
+         oninput="updateVal(${i}, 'w', this.value)" style="width:60px;">
 
-      高:<input id="h_input_${i}" type="number" value="${r.h}" oninput="setSelected(${i}); updateVal(${i}, 'h', this.value)" style="width:60px;">
+      高:<input id="h_input_${i}" type="number" value="${r.h}" 
+         oninput="updateVal(${i}, 'h', this.value)" style="width:60px;">
 
-      字元寬度『藍框』:<input id="adv_input_${i}" type="number" value="${r.adv}" 
-  oninput="setSelected(${i}); updateVal(${i}, 'adv', this.value)" style="width:60px;">
+      
+     字元寬度『藍框』:<input id="adv_input_${i}" type="number" value="${r.adv}" 
+         oninput="updateVal(${i}, 'adv', this.value)" style="width:60px;">
 
 
       <button onclick="confirmAdv(${i})">確認</button>
@@ -401,9 +405,9 @@ function updateCharEditor() {
       <span class="advanced-toggle" onclick="toggleAdvanced(${i})">進階設定 ▼</span>
       <div class="advanced-section" id="adv_section_${i}">
         水平偏移:<input id="xoff_input_${i}" type="number" value="${r.xoff}" 
-        oninput="setSelected(${i}); updateVal(${i}, 'xoff', this.value)" style="width:60px;">
+         oninput="updateVal(${i}, 'xoff', this.value)" style="width:60px;">
         垂直偏移:<input id="yoff_input_${i}" type="number" value="${r.yoff}" 
-        oninput="setSelected(${i}); updateVal(${i}, 'yoff', this.value)" style="width:60px;">
+         oninput="updateVal(${i}, 'yoff', this.value)" style="width:60px;">
 
         <button onclick="confirmOffset(${i})">確認位移</button>
       </div>
@@ -413,10 +417,19 @@ function updateCharEditor() {
 }
 
 function setSelected(i) {
+  if (selectedIndex === i) return; // 若已選中就不動作
   selectedIndex = i;
   drawAllRects();
-  updateCharEditor(); //強制更新紅框
-  
+
+  // 只更新高亮，不呼叫 updateCharEditor
+  const allRows = document.querySelectorAll(".char-row");
+  allRows.forEach((row, idx) => {
+    if (idx === selectedIndex) {
+      row.classList.add("highlight");
+    } else {
+      row.classList.remove("highlight");
+    }
+  });
 }
 
 
@@ -433,9 +446,30 @@ function toggleAdvanced(i) {
 
 function updateVal(i, prop, val) {
   rects[i][prop] = parseInt(val);
-  selectedIndex = i;           //  設定目前正在編輯的格子
-  updateCharEditor();          //  讓下方高亮也更新
-  drawAllRects();              //  重畫畫布上紅框
+  selectedIndex = i;
+  drawAllRects();
+
+  // 更新 highlight 樣式
+  const allRows = document.querySelectorAll(".char-row");
+  allRows.forEach((row, idx) => {
+    if (idx === selectedIndex) {
+      row.classList.add("highlight");
+    } else {
+      row.classList.remove("highlight");
+    }
+  });
+
+  // 自動捲動到對應項目（避免輸入時不知道對應哪格）
+  //const el = document.getElementById(`charRow_${selectedIndex}`);
+  //if (el) {
+  //  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  //}
+
+  // 延遲整體更新，防止 lag
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => {
+    updateCharEditor();
+  }, 200);
 }
 
 function confirmAdv(i) {
