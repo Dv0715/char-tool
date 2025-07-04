@@ -41,7 +41,8 @@
 
 <button onclick="autoSlice(true)">製作裁切</button>
 <button onclick="clearAllRects()">清除裁切</button>
-<button onclick="centerAllOffsets()">📌 居中【修改字元寬度後要點這裡重新找中心點】</button><br/><br/>
+<button onclick="centerAllOffsets()">📌 居中【修改字元寬度後要點這裡重新找中心點】</button><span style="font-size: 14px; color: #999;">（⚠️ 按下後會覆蓋所有手動偏移）</span><br/><br/>
+
 字元順序：<br/><input id="charList" type="text" value="0123456789,."/><br/>
 
 <canvas height="128" id="preview" width="512"></canvas>
@@ -53,11 +54,15 @@
 <canvas id="stringPreview" width="512" height="210" style="border:1px solid #aaa; margin-top:10px;"></canvas>
 <br/>
 <button onclick="generateFNT()">產生 .fnt</button>
-<button onclick="downloadFNT()">下載 .fnt</button>
+<button onclick="downloadFNT()">下載 .fnt</button><span style="font-size: 16px; color: #666;">（下載.fnt前一定要先點選『產生.fnt』按鈕）</span>
 <span style="float: right;">
   <button onclick="downloadPlist()">下載 .plist(需製作圖集時使用)</button>
 </span>
 <textarea id="outputFNT"></textarea>
+<div style="margin-top: 10px;">
+  <span style="font-size: 16px; color: #666;">◆更新日誌:</span><br/>
+  <span style="font-size: 16px; color: #666;">25/7/4 增加產生.fnt檔提示、增加居中鈕提示</span><br/>
+</div>
 
 <script>
 const canvas = document.getElementById("preview");
