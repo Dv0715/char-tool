@@ -1,31 +1,50 @@
-<!DOCTYPE html>
+ <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
 <meta charset="utf-8"/>
 <title>圖字製作小工具</title>
 <style>
-
   body {
-  background-color: #fff; 
-  font-family: 'Segoe UI', sans-serif;
-  color: #333;
-}
+    background-color: #fff;
+    font-family: 'Segoe UI', sans-serif;
+    color: #333;
+  }
   canvas {
-  border: 1px solid #aaa;
-  background-color: #fff; /* 白底 */
-  box-shadow: 0 2px 6px rgba(0,0,0,0.05); /* 輕微陰影讓畫布浮起來 */
-  display: block;
+    border: 1px solid #aaa;
+    background-color: #fff;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    display: block;
+    margin-bottom: 10px;
+    border-radius: 4px;
+    cursor: default;
+    transform-origin: top left;
+  }
+  /* 只針對縮放按鈕設定統一高度 */
+  #zoom2Btn, #resetZoomBtn {
+    height: 22px;
+    line-height: 22px;
+    padding: 0 12px;
+    font-size: 14px;
+  }
+.toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 10px;
-  border-radius: 4px; /* 圓角可選 */
-  cursor: default;
 }
+
+.toolbar-label {
+  white-space: nowrap;
+}
+
+
+
   .char-row { display: flex; align-items: center; gap: 5px; margin-bottom: 5px; flex-wrap: wrap; }
   textarea { width: 100%; height: 150px; margin-top: 20px; }
   .advanced-toggle { cursor: pointer; color: #007bff; text-decoration: underline; margin-left: 10px; }
   .advanced-section { display: none; margin-top: 5px; }
-  .highlight {
-    color: #b22222; /* 深紅色 */
-  }
+  .highlight { color: #b22222; }
 </style>
 </head>
 <body>
@@ -34,18 +53,31 @@
 
 格寬 <input id="gridW" style="width:60px;" type="number" value="40"/>
 格高 <input id="gridH" style="width:60px;" type="number" value="60"/>
-
 ｜或依格數切：
 欄數 <input id="gridCols" style="width:60px;" type="number" placeholder="欄數" onchange="updateGridSizeFromCount()"/>
 列數 <input id="gridRows" style="width:60px;" type="number" placeholder="列數" onchange="updateGridSizeFromCount()"/>
 
 <button onclick="autoSlice(true)">製作裁切</button>
 <button onclick="clearAllRects()">清除裁切</button>
-<button onclick="centerAllOffsets()">📌 居中【修改字元寬度後要點這裡重新找中心點】</button><span style="font-size: 14px; color: #999;">（⚠️ 按下後會覆蓋所有手動偏移）</span><br/><br/>
+<button onclick="centerAllOffsets()">📌 居中【修改字元寬度後要點這裡重新找中心點】</button><span style="font-size: 14px; color: #999;">（⚠️ 按下後會覆蓋所有手動偏移）</span><br/>
 
-字元順序：<br/><input id="charList" type="text" value="0123456789,."/><br/>
+  <!-- 新增倍率選擇 -->
+  <label for="zoomSelect" class="toolbar-label">倍率：</label>
+  <select id="zoomSelect" onchange="setZoom(Number(this.value))">
+    <option value="1">x1</option>
+    <option value="2">x2</option>
+    <option value="3">x3</option>
+  </select>
+<br/>
 
-<canvas height="128" id="preview" width="512"></canvas>
+字元順序：<input id="charList" type="text" value="0123456789,."/><br/>
+
+<!-- 
+<button id="zoom2Btn">X2</button>
+<button id="resetZoomBtn">還原</button>
+-->
+
+<canvas id="preview" width="512" height="128"></canvas>
 <div id="currentEditLabel" style="font-weight:bold; margin-bottom:5px; color:#555;"></div>
 <div id="charEditor"></div>
 <span style="font-size: 16px; color: #666;">（建議寬數值儘量與字元寬度相同,才不容易出錯）</span><br/>
@@ -55,13 +87,11 @@
 <br/>
 <button onclick="generateFNT()">產生 .fnt</button>
 <button onclick="downloadFNT()">下載 .fnt</button><span style="font-size: 16px; color: #666;">（下載.fnt前一定要先點選『產生.fnt』按鈕）</span>
-<span style="float: right;">
-  <button onclick="downloadPlist()">下載 .plist(需製作圖集時使用)</button>
-</span>
+<span style="float: right;"><button onclick="downloadPlist()">下載 .plist(需製作圖集時使用)</button></span>
 <textarea id="outputFNT"></textarea>
-<div style="margin-top: 10px;">
-  <span style="font-size: 16px; color: #666;">◆更新日誌:</span><br/>
-  <span style="font-size: 16px; color: #666;">25/7/4 增加產生.fnt檔提示、增加居中鈕提示</span><br/>
+<div style="margin-top: 10px;"><span style="font-size: 16px; color: #666;">◆更新日誌:</span><br/>
+<span style="font-size: 16px; color: #666;">25/7/4 增加產生.fnt檔提示、增加居中鈕提示</span><br/>
+<span style="font-size: 16px; color: #666;">25/7/14 裁切區域新增調整倍率模式</span><br/>
 </div>
 
 <script>
@@ -71,34 +101,37 @@ let image = new Image();
 let imageFilename = "image.png";
 let rects = [];
 let dragIndex = -1, dragOffsetX = 0, dragOffsetY = 0;
-let resizeMode = false;
-let creatingNewRect = false;
-let startX = 0, startY = 0;
-let selectedIndex = -1;
-let debounceTimer;
-const SNAP_TOLERANCE = 8;
-const RESIZE_HITBOX = 10;
+let resizeMode = false, creatingNewRect = false;
+let startX = 0, startY = 0, selectedIndex = -1;
+let debounceTimer, zoomLevel = 1;
+const SCREEN_SNAP = 8, RESIZE_HITBOX = 10;
 
+// Zoom buttons
+const zoomSelect = document.getElementById('zoomSelect');
+zoomSelect.addEventListener('change', () => setZoom(Number(zoomSelect.value)));
+function setZoom(level) {
+  zoomLevel = level;
+
+  if (level === 1) {
+    canvas.style.transform = 'none';
+    canvas.style.marginBottom = '';      // 還原
+  } else {
+    canvas.style.transform = `scale(${level})`;
+    // 多留出 (scale - 1) * canvas 原始高度 作為下方間距
+    canvas.style.marginBottom = `${(canvas.height * (level - 1))}px`;
+  }
+}
+
+// Unified mouse handlers
 canvas.addEventListener("mousedown", (e) => {
   const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-  dragIndex = rects.findIndex(r => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h);
+  const x = (e.clientX - rect.left) / zoomLevel;
+  const y = (e.clientY - rect.top) / zoomLevel;
+  dragIndex = rects.findIndex(r => x>=r.x&&x<=r.x+r.w&&y>=r.y&&y<=r.y+r.h);
   selectedIndex = dragIndex;
-
-//setTimeout(() => {
-//  const el = document.getElementById(`charRow_${selectedIndex}`);
-//  if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-//}, 10);
-
-  if (dragIndex !== -1) {
+  if (dragIndex>=0) {
     const r = rects[dragIndex];
-    if (
-      x >= r.x + r.w - RESIZE_HITBOX &&
-      x <= r.x + r.w &&
-      y >= r.y + r.h - RESIZE_HITBOX &&
-      y <= r.y + r.h
-    ) {
+    if (x>=r.x+r.w-RESIZE_HITBOX&&x<=r.x+r.w&&y>=r.y+r.h-RESIZE_HITBOX&&y<=r.y+r.h) {
       resizeMode = true;
     } else {
       resizeMode = false;
@@ -106,167 +139,164 @@ canvas.addEventListener("mousedown", (e) => {
       dragOffsetY = y - r.y;
     }
   } else {
-    // 空白處：開始拉出新格子
-    creatingNewRect = true;
-    startX = x;
-    startY = y;
-    rects.push({ x: x, y: y, w: 1, h: 1, adv: 1, xoff: 0, yoff: 0 });
-    dragIndex = rects.length - 1;
+    creatingNewRect = true; startX = x; startY = y;
+    rects.push({x,y,w:1,h:1,adv:1,xoff:0,yoff:0});
+    dragIndex = rects.length-1;
   }
 });
-
 canvas.addEventListener("mousemove", (e) => {
+  // 1. 每次滑鼠移動時計算「畫面上8px」在 canvas 座標系的距離
+  const tol = SCREEN_SNAP / zoomLevel;  
+
   const rect = canvas.getBoundingClientRect();
-  const mouseX = e.clientX - rect.left;
-  const mouseY = e.clientY - rect.top;
+  const mx = (e.clientX - rect.left) / zoomLevel;
+  const my = (e.clientY - rect.top) / zoomLevel;
 
   if (dragIndex !== -1) {
     const r = rects[dragIndex];
 
     if (creatingNewRect) {
-      let rawX = Math.min(startX, mouseX);
-      let rawY = Math.min(startY, mouseY);
-      let newW = Math.max(1, Math.abs(mouseX - startX));
-      let newH = Math.max(1, Math.abs(mouseY - startY));
-      let snapX = rawX;
-      let snapY = rawY;
+      // ... 計算 rawX, rawY, newW, newH ...
+      let rawX = Math.min(startX, mx);
+      let rawY = Math.min(startY, my);
+      let newW  = Math.max(1, Math.abs(mx - startX));
+      let newH  = Math.max(1, Math.abs(my - startY));
 
+      // 初始 snap 值
+      let snapX = rawX, snapY = rawY;
+      let snapW = newW, snapH = newH;
+
+      // 2. 把這裡所有 < SNAP_TOLERANCE 改成 < tol
       for (let i = 0; i < rects.length - 1; i++) {
-        const other = rects[i];
-        if (Math.abs(rawX - other.x) < SNAP_TOLERANCE) snapX = other.x;
-        if (Math.abs(rawX + newW - other.x) < SNAP_TOLERANCE) snapX = other.x - newW;
-        if (Math.abs(rawX - (other.x + other.w)) < SNAP_TOLERANCE) snapX = other.x + other.w;
+        const o = rects[i];
+        // 左邊對齊
+        if (Math.abs(rawX - o.x)             < tol) snapX = o.x;
+        // 右邊對齊 → 同時影響寬度
+        if (Math.abs(rawX + newW - o.x)      < tol) snapW = o.x - snapX;
+        if (Math.abs(rawX + newW - (o.x+o.w))< tol) snapW = o.x+o.w - snapX;
 
-        if (Math.abs(rawY - other.y) < SNAP_TOLERANCE) snapY = other.y;
-        if (Math.abs(rawY + newH - other.y) < SNAP_TOLERANCE) snapY = other.y - newH;
-        if (Math.abs(rawY - (other.y + other.h)) < SNAP_TOLERANCE) snapY = other.y + other.h;
+        // 上邊對齊
+        if (Math.abs(rawY - o.y)             < tol) snapY = o.y;
+        // 下邊對齊 → 同時影響高度
+        if (Math.abs(rawY + newH - o.y)      < tol) snapH = o.y - snapY;
+        if (Math.abs(rawY + newH - (o.y+o.h))< tol) snapH = o.y+o.h - snapY;
       }
 
+      // 實際套用
       r.x = snapX;
       r.y = snapY;
-      r.w = newW;
-      r.h = newH;
-      r.adv = r.w;
-    } else if (resizeMode) {
-      r.w = Math.max(1, mouseX - r.x);
-      r.h = Math.max(1, mouseY - r.y);
-
-      // 同步更新 adv 和 xoff，讓藍框也跟著拉伸
-      r.adv = r.w;
-      r.xoff = 0; // 讓偏移回歸起點（藍框左邊對齊格子起點）
-      
-      // r.xoff = Math.floor((r.adv - r.w) / 2);
-} else {
-      let newX = mouseX - dragOffsetX;
-      let newY = mouseY - dragOffsetY;
-      let snapX = newX;
-      let snapY = newY;
-
-      for (let i = 0; i < rects.length; i++) {
-        if (i === dragIndex) continue;
-        const other = rects[i];
-
-        if (Math.abs(newX - other.x) < SNAP_TOLERANCE) snapX = other.x;
-        if (Math.abs(newX - (other.x + other.w)) < SNAP_TOLERANCE) snapX = other.x + other.w;
-        if (Math.abs(newX + r.w - other.x) < SNAP_TOLERANCE) snapX = other.x - r.w;
-
-        if (Math.abs(newY - other.y) < SNAP_TOLERANCE) snapY = other.y;
-        if (Math.abs(newY - (other.y + other.h)) < SNAP_TOLERANCE) snapY = other.y + other.h;
-        if (Math.abs(newY + r.h - other.y) < SNAP_TOLERANCE) snapY = other.y - r.h;
-      }
-
-      r.x = snapX;
-      r.y = snapY;
+      r.w = snapW;
+      r.h = snapH;
+      r.adv = snapW;
+    }
+   else if (resizeMode) {
+     // 「拉伸＋吸附」
+     let newW = Math.max(1, (e.clientX - canvas.getBoundingClientRect().left)/zoomLevel - r.x);
+     let newH = Math.max(1, (e.clientY - canvas.getBoundingClientRect().top)/zoomLevel  - r.y);
+     let snapW = newW, snapH = newH;
+     rects.forEach((o, i) => {
+       if (i === dragIndex) return;
+       // 橫向吸附
+       if (Math.abs(r.x + newW - o.x)       < tol) snapW = o.x - r.x;
+       if (Math.abs(r.x + newW - (o.x+o.w)) < tol) snapW = o.x+o.w - r.x;
+       // 縱向吸附
+       if (Math.abs(r.y + newH - o.y)       < tol) snapH = o.y - r.y;
+       if (Math.abs(r.y + newH - (o.y+o.h)) < tol) snapH = o.y+o.h - r.y;
+     });
+     r.w = snapW; r.h = snapH;
+     r.adv = snapW; r.xoff = 0;
+   }
+    else {
+      // 「拖曳＋吸附」
+      let newX = mx - dragOffsetX;
+      let newY = my - dragOffsetY;
+      let snapX = newX, snapY = newY;
+      rects.forEach((o, i) => {
+        if (i === dragIndex) return;
+        // 左／右邊吸附
+        if (Math.abs(newX       - o.x       ) < tol) snapX = o.x;
+        if (Math.abs(newX + r.w - o.x       ) < tol) snapX = o.x - r.w;
+        if (Math.abs(newX       - (o.x+o.w) ) < tol) snapX = o.x+o.w;
+        // 上／下邊吸附
+        if (Math.abs(newY       - o.y       ) < tol) snapY = o.y;
+        if (Math.abs(newY + r.h - o.y       ) < tol) snapY = o.y - r.h;
+        if (Math.abs(newY       - (o.y+o.h) ) < tol) snapY = o.y+o.h;
+      });
+      r.x = snapX; r.y = snapY;
     }
 
     drawAllRects();
   }
-
-  let hoverResize = false;
-  for (let i = 0; i < rects.length; i++) {
-    const r = rects[i];
-    const rx = r.x + r.w;
-    const ry = r.y + r.h;
-    if (
-      mouseX >= rx - RESIZE_HITBOX &&
-      mouseX <= rx &&
-      mouseY >= ry - RESIZE_HITBOX &&
-      mouseY <= ry
-    ) {
-      hoverResize = true;
-      break;
-    }
-  }
-  canvas.style.cursor = hoverResize ? "nwse-resize" : "default";
+  // cursor style
+  let hit = false;
+  rects.forEach(r => {
+    if (mx>=r.x+r.w-RESIZE_HITBOX&&mx<=r.x+r.w&&my>=r.y+r.h-RESIZE_HITBOX&&my<=r.y+r.h) hit=true;
+  });
+  canvas.style.cursor = hit? 'nwse-resize':'default';
 });
-
-
 canvas.addEventListener("mouseup", () => {
   if (creatingNewRect) {
-    const r = rects[rects.length - 1];
-    if (r.w < 4 || r.h < 4) {
-      rects.pop(); // 刪除太小的格子
-    }
+    const r = rects[rects.length-1];
+    if (r.w<4||r.h<4) rects.pop();
   }
-  dragIndex = -1;
-  resizeMode = false;
-  creatingNewRect = false;
-  updateCharEditor();
-  drawAllRects();
+  dragIndex=-1; resizeMode=false; creatingNewRect=false;
+  updateCharEditor(); drawAllRects();
 });
-
-canvas.addEventListener("mouseleave", () => dragIndex = -1);
+canvas.addEventListener("mouseleave", () => dragIndex=-1);
 
 function drawAllRects() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (image.src) ctx.drawImage(image, 0, 0);
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  if (image.src) ctx.drawImage(image,0,0);
+
+//顯示選取中的格子編號
+  rects.forEach((r,i) => {
+    ctx.strokeStyle="gold"; ctx.strokeRect(r.x,r.y,r.w,r.h);
+
+// 選中的格子用紅底框標示編號
+    if (i===selectedIndex) {
+      const lbl=`#${i}`;
+      ctx.font="bold 14px sans-serif";
+      ctx.textBaseline = "top";
+
+  // 2. 量文字寬、高
+      const tw=ctx.measureText(lbl).width;
+  const th = 14;            // 與字型大小相同
+  const margin = 4;         // Canvas 座標下的內邊距
 
 
-    // 顯示選取中的格子編號
-    rects.forEach((r, i) => {
-  ctx.strokeStyle = "gold";
-  ctx.strokeRect(r.x, r.y, r.w, r.h);
+// 紅底標籤內縮參數（畫布座標）
+const padding = 2;
 
-  // 每格都標編號（黑色）
-  //ctx.fillStyle = "black";
-  //ctx.font = "12px sans-serif";
-  //ctx.fillText(`#${i}`, r.x + 2, r.y + 14);
+// 1) 背景
+ctx.fillStyle = "rgba(255,0,0,0.5)";
+ctx.fillRect(
+  r.x + padding,                 // 往右跑 padding
+  r.y + padding,                 // 往下跑 padding
+  tw + padding*2,                // 寬度 + 左右 padding
+  14 + padding*2                 // 文字高度（14px）+ 上下 padding
+);
 
-  // 選中的格子用紅底框標示編號
-  if (i === selectedIndex) {
-      const label = `#${i}`;
-      ctx.font = "bold 14px sans-serif";
-      const textWidth = ctx.measureText(label).width;
-      const textX = r.x + 2;
-      const textY = r.y + 16;
-
-      // 紅色底
-      ctx.fillStyle = "rgba(255, 0, 0, 0.5)";
-      ctx.fillRect(textX - 2, textY - 12, textWidth + 4, 16);
-
-      // 白字
-      ctx.fillStyle = "rgba(255, 255, 255, 1)";
-      ctx.fillText(label, textX, textY);
+// 2) 文字
+ctx.fillStyle = "#fff";
+ctx.textBaseline = "top";
+ctx.fillText(
+  lbl,
+  r.x + padding,
+  r.y + padding
+);
 }
+    // 水平偏移線：左（藍色）
+    ctx.strokeStyle="lightblue";
+    ctx.beginPath(); ctx.moveTo(r.x+r.xoff,r.y);
+    ctx.lineTo(r.x+r.xoff,r.y+r.h); ctx.stroke();
 
-  // 水平偏移線：左（藍色）
-  ctx.strokeStyle = "lightblue";
-  ctx.beginPath();
-  ctx.moveTo(r.x + r.xoff, r.y);
-  ctx.lineTo(r.x + r.xoff, r.y + r.h);
-  ctx.stroke();
+    // 水平偏移線：右（yoff）
+    ctx.beginPath(); ctx.moveTo(r.x+r.xoff+r.adv,r.y);
+    ctx.lineTo(r.x+r.xoff+r.adv,r.y+r.h); ctx.stroke();
 
-  // 水平偏移線：右（yoff）
-    ctx.beginPath();
-    ctx.moveTo(r.x + r.xoff + r.adv, r.y);
-    ctx.lineTo(r.x + r.xoff + r.adv, r.y + r.h);
-    ctx.stroke();
-
-  // 垂直偏移線（yoff）
-    ctx.beginPath();
-    ctx.moveTo(r.x, r.y + r.yoff);
-    ctx.lineTo(r.x + r.w, r.y + r.yoff);
-    ctx.stroke();
+    // 垂直偏移線（yoff）
+    ctx.beginPath(); ctx.moveTo(r.x,r.y+r.yoff);
+    ctx.lineTo(r.x+r.w,r.y+r.yoff); ctx.stroke();
   });
   drawPreviewString();
 }
@@ -643,18 +673,10 @@ function getSafeCharName(c) {
 
 
 
-document.getElementById("imageUpload").addEventListener("change", e => {
-  const file = e.target.files[0];
-  const reader = new FileReader();
-  reader.onload = evt => {
-    image.onload = () => {
-      canvas.width = image.naturalWidth;
-      canvas.height = image.naturalHeight;
-      drawAllRects();
-    };
-    image.src = evt.target.result;
-    imageFilename = file.name;
-  };
+document.getElementById("imageUpload").addEventListener("change", e=>{
+  const file=e.target.files[0];
+  const reader=new FileReader();
+  reader.onload=evt=>{ image.onload=()=>{ canvas.width=image.naturalWidth; canvas.height=image.naturalHeight; drawAllRects(); }; image.src=evt.target.result; imageFilename=file.name; };
   reader.readAsDataURL(file);
 });
 </script>
