@@ -62,7 +62,7 @@
 <button onclick="centerAllOffsets()">📌 居中【修改字元寬度後要點這裡重新找中心點】</button><span style="font-size: 14px; color: #999;">（⚠️ 按下後會覆蓋所有手動偏移）</span><br/>
 
   <!-- 新增倍率選擇 -->
-  <label for="zoomSelect" class="toolbar-label">倍率：</label>
+  <label for="zoomSelect" class="toolbar-label">🔍倍率：</label>
   <select id="zoomSelect" onchange="setZoom(Number(this.value))">
     <option value="1">x1</option>
     <option value="2">x2</option>
@@ -77,8 +77,7 @@
 <button id="resetZoomBtn">還原</button>
 -->
 
-
-<canvas id="preview" width="512" height="128" style="border:1px solid #aaa; border-radius:0;"></canvas>
+<canvas id="preview" width="512" height="128"></canvas>
 <div id="currentEditLabel" style="font-weight:bold; margin-bottom:5px; color:#555;"></div>
 <div id="charEditor"></div>
 <span style="font-size: 16px; color: #666;">（建議寬數值儘量與字元寬度相同,才不容易出錯）</span><br/>
@@ -88,6 +87,13 @@
 <br/>
 <button onclick="generateFNT()">產生 .fnt</button>
 <button onclick="downloadFNT()">下載 .fnt</button><span style="font-size: 16px; color: #666;">（下載.fnt前一定要先點選『產生.fnt』按鈕）</span>
+<input type="file" id="importFntInput" accept=".fnt" style="display:none">
+<button id="importFntBtn">匯入.fnt</button>
+<button id="exportJSONBtn">下載.json</button>
+<input type="file" id="importJSONInput" accept="application/json" style="display:none;">
+<button id="importJSONBtn">匯入.json</button>
+
+
 <span style="float: right;"><button onclick="downloadPlist()">下載 .plist(需製作圖集時使用)</button></span>
 <textarea id="outputFNT"></textarea>
 <div style="margin-top: 10px;"><span style="font-size: 16px; color: #666;">◆更新日誌:</span><br/>
@@ -572,6 +578,7 @@ function downloadFNT() {
   URL.revokeObjectURL(a.href);
 }
 
+
 function downloadPlist() {
   const chars = document.getElementById("charList").value;
   const frames = {};
@@ -671,6 +678,101 @@ function getSafeCharName(c) {
   if (/^[a-zA-Z0-9]$/.test(c)) return c;
   return map[c] || `U${c.charCodeAt(0)}`; // fallback：以 Unicode 命名
 }
+
+
+// --- 1) .fnt導入 ---
+document.getElementById("importFntBtn").onclick = () => {
+  document.getElementById("importFntInput").click();
+};
+
+document.getElementById("importFntInput").onchange = e => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = evt => {
+    const text = evt.target.result;
+    
+    // 1. 用正则一次性抓出所有以 "char " 开头的行（不会漏掉最后一条）
+    const charLines = text.match(/^char\s+id=.*$/gm) || [];
+
+    // 重置 rects 和字符列表
+    rects = [];
+    let chars = "";
+
+    charLines.forEach(line => {
+      // 2. 用正则提取这一行里所有 key=数字（包括小数）
+      const o = {};
+      line.replace(/(\w+)=(-?\d*\.?\d+)/g, (_, key, val) => {
+        o[key] = parseFloat(val);
+      });
+
+      // 3. 左侧字符列表同步成 .fnt 里的 id 顺序
+      chars += String.fromCharCode(o.id);
+
+      // 把解析出来的值推入 rects
+      rects.push({
+        x:    o.x,
+        y:    o.y,
+        w:    o.width,
+        h:    o.height,
+        adv:  o.xadvance,
+        xoff: o.xoffset,
+        yoff: o.yoffset
+      });
+    });
+
+    // 更新输入框和画面
+    document.getElementById("charList").value = chars;
+    updateCharEditor();
+    drawAllRects();
+  };
+
+  reader.readAsText(file);
+};
+
+
+
+// --- 導出JSON檔 ---
+document.getElementById("exportJSONBtn").onclick = () => {
+  const data = {
+    charList: document.getElementById("charList").value,
+    rects,
+    imageFilename
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = (imageFilename.replace(/\.[^/.]+$/, "") || "project") + ".json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+
+
+// --- 導入JSON檔 ---
+document.getElementById("importJSONBtn").onclick = () => {
+  document.getElementById("importJSONInput").click();
+};
+document.getElementById("importJSONInput").onchange = e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = evt => {
+    try {
+      const { charList: cl, rects: rs, imageFilename: fn } = JSON.parse(evt.target.result);
+      document.getElementById("charList").value = cl;
+      rects = rs;
+      imageFilename = fn || imageFilename;
+      updateCharEditor();
+      drawAllRects();
+    } catch {
+      alert("无效的 JSON 文件");
+    }
+  };
+  reader.readAsText(file);
+};
+
+
 
 
 
